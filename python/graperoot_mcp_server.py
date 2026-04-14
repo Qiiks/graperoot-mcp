@@ -160,6 +160,25 @@ If this is a new project that hasn't been set up with GrapeRoot yet:
 3. After setup completes, you can use all graph tools normally
 """
 
+DUALGRAPH_ENTRY = ".dualgraph"
+
+
+def add_dualgraph_to_gitignore(root: Path) -> str:
+    """Add .dualgraph/ to .gitignore if not already present."""
+    gitignore = root / ".gitignore"
+    entry = DUALGRAPH_ENTRY
+
+    if gitignore.exists():
+        content = gitignore.read_text(encoding="utf-8")
+        lines = content.splitlines()
+        if entry in lines or any(l.strip() == entry for l in lines):
+            return "already_present"
+
+    with open(gitignore, "a", encoding="utf-8") as f:
+        f.write(f"\n{entry}\n")
+    return "added"
+
+
 def inject_agents_md(project_root: Path) -> str:
     candidates = [
         project_root / "AGENTS.md",
@@ -240,7 +259,7 @@ def main() -> None:
             "stderr_tail": "\n".join((completed.stderr or "").splitlines()[-20:]),
         }
 
-    def _run_setup_job(job_id: str, root: Path, dg: Path, injected: str) -> None:
+    def _run_setup_job(job_id: str, root: Path, dg: Path, injected: str, gitignore_status: str) -> None:
         out_file = dg / "info_graph.json"
         with jobs_lock:
             setup_jobs[job_id]["status"] = "running"
@@ -255,6 +274,7 @@ def main() -> None:
                     "project_root": str(root),
                     "dual_graph_dir": str(dg),
                     "agents_md_updated": injected,
+                    "gitignore_updated": gitignore_status,
                     "scan_result": {
                         "status": "scan_complete",
                         "attempt": 1,
@@ -302,6 +322,7 @@ def main() -> None:
                     "project_root": str(root),
                     "dual_graph_dir": str(dg),
                     "agents_md_updated": injected,
+                    "gitignore_updated": gitignore_status,
                     "scan_result": {
                         "status": "scan_complete_after_auto_heal",
                         "attempt": 2,
@@ -318,6 +339,7 @@ def main() -> None:
                 "project_root": str(root),
                 "dual_graph_dir": str(dg),
                 "agents_md_updated": injected,
+                "gitignore_updated": gitignore_status,
                 "scan_result": {
                     "status": "scan_failed",
                     "attempts": [first, second],
@@ -335,6 +357,7 @@ def main() -> None:
         os.environ["DG_DATA_DIR"] = str(dg)
 
         injected = inject_agents_md(root)
+        gitignore_status = add_dualgraph_to_gitignore(root)
 
         job_id = uuid.uuid4().hex
         with jobs_lock:
@@ -344,13 +367,14 @@ def main() -> None:
                 "project_root": str(root),
                 "dual_graph_dir": str(dg),
                 "agents_md_updated": injected,
+                "gitignore_updated": gitignore_status,
                 "created_at": time.time(),
                 "result": None,
             }
 
         worker = threading.Thread(
             target=_run_setup_job,
-            args=(job_id, root, dg, injected),
+            args=(job_id, root, dg, injected, gitignore_status),
             daemon=True,
         )
         worker.start()
@@ -361,6 +385,7 @@ def main() -> None:
             "project_root": str(root),
             "dual_graph_dir": str(dg),
             "agents_md_updated": injected,
+            "gitignore_updated": gitignore_status,
             "message": "Setup job started. Poll graperoot_setup_status(job_id) or call graperoot_setup_wait(job_id).",
         }
 
@@ -381,6 +406,7 @@ def main() -> None:
                 "phase": job.get("phase", "unknown"),
                 "project_root": job.get("project_root"),
                 "dual_graph_dir": job.get("dual_graph_dir"),
+                "gitignore_updated": job.get("gitignore_updated"),
                 "result": job.get("result"),
             }
 
