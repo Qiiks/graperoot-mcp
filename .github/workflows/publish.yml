@@ -5,6 +5,10 @@ on:
     branches: [main, master]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  packages: write
+
 jobs:
   publish:
     runs-on: ubuntu-latest
@@ -25,11 +29,6 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Configure git
-        run: |
-          git config --global user.name 'github-actions[bot]'
-          git config --global user.email 'github-actions[bot]@users.noreply.github.com'
-
       - name: Bump version and publish
         run: |
           # Get current version
@@ -46,13 +45,8 @@ jobs:
           NEW_PATCH=$((PATCH + 1))
           NEW_VERSION="$MAJOR.$MINOR.$NEW_PATCH"
           
-          # Update package.json
+          # Update package.json (no git commit/push)
           npm version $NEW_VERSION --no-git-tag-version
-          
-          # Commit and push version bump
-          git add package.json
-          git commit -m "chore: bump version to $NEW_VERSION"
-          git push
           
           # Publish to npm
           npm publish
