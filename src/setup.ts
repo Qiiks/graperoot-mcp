@@ -2,33 +2,46 @@ import { select, confirm } from "@inquirer/prompts";
 import chalk from "chalk";
 import ora from "ora";
 import { allPlatforms } from "./platforms.js";
-import { configurePlatform, buildMCPConfig, findPython, findGraperootVenv } from "./config-writer.js";
+import {
+  configurePlatform,
+  buildMCPConfig,
+  findPython,
+  isGraperootInstalled,
+  installGraperoot,
+} from "./config-writer.js";
 import { getTargetFiles, injectInstructions } from "./agents-md.js";
 import type { SetupResult } from "./types.js";
 
 export async function runSetup(): Promise<void> {
   console.log(chalk.cyan("\n🍇 GrapeRoot MCP Setup\n"));
 
-  const pythonCmd = findPython();
-  const venvPython = findGraperootVenv();
-
-  if (!pythonCmd && !venvPython) {
-    console.log(
-      chalk.red(
-        "Error: Python >=3.10 not found. Install Python first, then run GrapeRoot's installer:\n"
-      )
-    );
-    console.log("  macOS/Linux: curl -sSL https://raw.githubusercontent.com/kunal12203/Codex-CLI-Compact/main/install.sh | bash");
-    console.log("  Windows:    irm https://raw.githubusercontent.com/kunal12203/Codex-CLI-Compact/main/install.ps1 | iex");
-    console.log();
+  const python = findPython();
+  if (!python) {
+    console.log(chalk.red("Error: Python >=3.10 not found. Install Python first.\n"));
     process.exit(1);
   }
+  console.log(chalk.green("✓") + " Found Python: " + chalk.dim(python));
 
-  if (venvPython) {
-    console.log(chalk.green("✓") + " Found GrapeRoot Python venv: " + chalk.dim(venvPython));
-  } else if (pythonCmd) {
-    console.log(chalk.green("✓") + " Found Python: " + chalk.dim(pythonCmd));
-    console.log(chalk.yellow("⚠") + " GrapeRoot venv not found. Run the GrapeRoot installer for best results.");
+  if (!isGraperootInstalled(python)) {
+    console.log(chalk.yellow("⚠") + " graperoot not installed via pip.");
+    const doInstall = await confirm({
+      message: "Install graperoot globally via pip?",
+      default: true,
+    });
+    if (!doInstall) {
+      console.log(chalk.red("\nCannot continue without graperoot. Run: pip install graperoot"));
+      process.exit(1);
+    }
+    const spin = ora("Installing graperoot via pip...").start();
+    const ok = installGraperoot(python);
+    spin.stop();
+    if (!ok) {
+      console.log(chalk.red("Failed to install graperoot. Try manually: pip install graperoot"));
+      process.exit(1);
+    }
+    console.log(chalk.green("✓") + " graperoot installed");
+  } else {
+    console.log(chalk.green("✓") + " graperoot pip package found");
   }
 
   const choices = allPlatforms.map((p) => ({

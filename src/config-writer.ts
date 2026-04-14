@@ -24,30 +24,46 @@ export function findPython(): string | null {
   return null;
 }
 
-export function findGraperootVenv(): string | null {
-  const home = process.env.HOME || process.env.USERPROFILE || "";
-  const venvPython = join(home, ".dual-graph", "venv", "Scripts", "python.exe");
-  const venvPythonUnix = join(home, ".dual-graph", "venv", "bin", "python");
-  if (existsSync(venvPython)) return venvPython;
-  if (existsSync(venvPythonUnix)) return venvPythonUnix;
-  return null;
+export function isGraperootInstalled(python: string): boolean {
+  try {
+    execSync(`${python} -c "import graperoot" 2>&1`, {
+      encoding: "utf-8",
+      timeout: 10000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function installGraperoot(python: string): boolean {
+  try {
+    execSync(`${python} -m pip install graperoot --quiet 2>&1`, {
+      encoding: "utf-8",
+      timeout: 120000,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function getWrapperPath(): string {
+  return join(dirname(dirname(new URL(import.meta.url).pathname)), "python", "graperoot_mcp_server.py");
 }
 
 export function getMCPServerCommand(): string[] {
-  const venvPython = findGraperootVenv();
-  if (venvPython) {
-    const scriptPath = join(dirname(dirname(venvPython)), "..", "..");
-    return [venvPython, "-m", "graperoot.mcp_graph_server"];
-  }
-
   const python = findPython();
-  if (python) {
-    return [python, "-m", "graperoot.mcp_graph_server"];
+  if (!python) {
+    throw new Error("Python >=3.10 not found. Install Python first.");
   }
 
-  throw new Error(
-    "Python >=3.10 not found. Install Python or run the GrapeRoot installer first."
-  );
+  if (!isGraperootInstalled(python)) {
+    throw new Error("graperoot not installed. Run: pip install graperoot");
+  }
+
+  const wrapper = getWrapperPath();
+  return [python, wrapper];
 }
 
 export function buildMCPConfig(): MCPServerConfig {
@@ -82,18 +98,10 @@ function readJsoncConfig(filePath: string): Record<string, unknown> {
 function writeJsonConfig(
   filePath: string,
   data: Record<string, unknown>,
-  isJsonc: boolean = false
+  _isJsonc: boolean = false
 ): void {
   const dir = dirname(filePath);
   if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
-
-  if (isJsonc && existsSync(filePath)) {
-    const original = readFileSync(filePath, "utf-8");
-    const jsonStr = JSON.stringify(data, null, 2);
-    writeFileSync(filePath, jsonStr + "\n", "utf-8");
-    return;
-  }
-
   writeFileSync(filePath, JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
