@@ -16,6 +16,7 @@ for .dual-graph/, .git/, or falls back to cwd.
 
 import os
 import sys
+import subprocess
 from pathlib import Path
 
 
@@ -203,16 +204,95 @@ def main() -> None:
 
         injected = inject_agents_md(root)
 
-        scan_result = None
-        try:
-            from graperoot.mcp_graph_server import _post
-            scan_result = _post("/api/scan", {"project_root": str(root)})
-        except Exception:
+        out_file = dg / "info_graph.json"
+
+        def _run_scan_once() -> dict:
             try:
-                from graperoot.mcp_graph_server import graph_scan
-                scan_result = graph_scan(str(root))
-            except Exception:
-                scan_result = {"note": "graph_scan not available via API, run `dgc .` manually"}
+                completed = subprocess.run(
+                    [
+                        sys.executable,
+                        "-m",
+                        "graperoot.graph_builder",
+                        "--root",
+                        str(root),
+                        "--out",
+                        str(out_file),
+                    ],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    check=False,
+                )
+            except Exception as exc:
+                return {
+                    "ok": False,
+                    "method": "python -m graperoot.graph_builder",
+                    "error": str(exc),
+                }
+
+            if completed.returncode == 0 and out_file.exists():
+                return {
+                    "ok": True,
+                    "method": "python -m graperoot.graph_builder",
+                    "returncode": 0,
+                    "info_graph": str(out_file),
+                }
+
+            return {
+                "ok": False,
+                "method": "python -m graperoot.graph_builder",
+                "returncode": completed.returncode,
+                "stdout_tail": "\n".join((completed.stdout or "").splitlines()[-20:]),
+                "stderr_tail": "\n".join((completed.stderr or "").splitlines()[-20:]),
+            }
+
+        first = _run_scan_once()
+        if first.get("ok"):
+            scan_result = {
+                "status": "scan_complete",
+                "attempt": 1,
+                **first,
+            }
+        else:
+            heal = {
+                "status": "pip_upgrade_failed",
+                "detail": "upgrade step failed",
+            }
+            try:
+                pip_upgrade = subprocess.run(
+                    [sys.executable, "-m", "pip", "install", "--upgrade", "graperoot"],
+                    capture_output=True,
+                    text=True,
+                    timeout=600,
+                    check=False,
+                )
+                heal = {
+                    "status": "pip_upgrade_complete" if pip_upgrade.returncode == 0 else "pip_upgrade_failed",
+                    "returncode": pip_upgrade.returncode,
+                    "stdout_tail": "\n".join((pip_upgrade.stdout or "").splitlines()[-20:]),
+                    "stderr_tail": "\n".join((pip_upgrade.stderr or "").splitlines()[-20:]),
+                }
+            except Exception as exc:
+                heal = {
+                    "status": "pip_upgrade_failed",
+                    "error": str(exc),
+                }
+
+            second = _run_scan_once()
+            if second.get("ok"):
+                scan_result = {
+                    "status": "scan_complete_after_auto_heal",
+                    "attempt": 2,
+                    "heal": heal,
+                    **second,
+                }
+            else:
+                scan_result = {
+                    "status": "scan_failed",
+                    "attempts": [first, second],
+                    "heal": heal,
+                    "hint": "Scan failed after auto-heal retry. Verify python/pip environment and graperoot installation.",
+                }
 
         return {
             "status": "initialized",
