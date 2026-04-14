@@ -160,7 +160,7 @@ If this is a new project that hasn't been set up with GrapeRoot yet:
 3. After setup completes, you can use all graph tools normally
 """
 
-DUALGRAPH_ENTRY = ".dualgraph"
+DUALGRAPH_ENTRY = ".dual-graph"
 
 
 def add_dualgraph_to_gitignore(root: Path) -> str:
