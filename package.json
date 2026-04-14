@@ -1,0 +1,63 @@
+{
+  "name": "graperoot-mcp",
+  "version": "0.1.0",
+  "description": "Configure GrapeRoot's dual-graph MCP server for any AI coding assistant",
+  "keywords": [
+    "graperoot",
+    "dual-graph",
+    "mcp",
+    "opencode",
+    "claude-code",
+    "cline",
+    "cursor",
+    "windsurf",
+    "aider",
+    "continue",
+    "kilocode",
+    "qoder",
+    "antigravity"
+  ],
+  "homepage": "https://github.com/sanveer-dev/graperoot-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/sanveer-dev/graperoot-mcp/issues"
+  },
+  "license": "MIT",
+  "author": "Sanveer",
+  "type": "module",
+  "bin": {
+    "graperoot-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist/",
+    "python/"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "lint": "eslint src/",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.0.0",
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "detect-indent": "^7.0.0",
+    "jsonc-parser": "^3.3.0",
+    "ora": "^8.0.0",
+    "which": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/which": "^3.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sanveer-dev/graperoot-mcp.git"
+  }
+}
