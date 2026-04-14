@@ -17,6 +17,9 @@ for .dual-graph/, .git/, or falls back to cwd.
 import os
 import sys
 import subprocess
+import threading
+import time
+import uuid
 from pathlib import Path
 
 
@@ -194,9 +197,138 @@ def main() -> None:
 
     mcp = build_server()
 
+    setup_jobs: dict[str, dict] = {}
+    jobs_lock = threading.Lock()
+
+    def _run_scan_once(root: Path, out_file: Path) -> dict:
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "graperoot.graph_builder",
+                    "--root",
+                    str(root),
+                    "--out",
+                    str(out_file),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "method": "python -m graperoot.graph_builder",
+                "error": str(exc),
+            }
+
+        if completed.returncode == 0 and out_file.exists():
+            return {
+                "ok": True,
+                "method": "python -m graperoot.graph_builder",
+                "returncode": 0,
+                "info_graph": str(out_file),
+            }
+
+        return {
+            "ok": False,
+            "method": "python -m graperoot.graph_builder",
+            "returncode": completed.returncode,
+            "stdout_tail": "\n".join((completed.stdout or "").splitlines()[-20:]),
+            "stderr_tail": "\n".join((completed.stderr or "").splitlines()[-20:]),
+        }
+
+    def _run_setup_job(job_id: str, root: Path, dg: Path, injected: str) -> None:
+        out_file = dg / "info_graph.json"
+        with jobs_lock:
+            setup_jobs[job_id]["status"] = "running"
+            setup_jobs[job_id]["phase"] = "scan_attempt_1"
+
+        first = _run_scan_once(root, out_file)
+        if first.get("ok"):
+            with jobs_lock:
+                setup_jobs[job_id]["status"] = "completed"
+                setup_jobs[job_id]["result"] = {
+                    "status": "initialized",
+                    "project_root": str(root),
+                    "dual_graph_dir": str(dg),
+                    "agents_md_updated": injected,
+                    "scan_result": {
+                        "status": "scan_complete",
+                        "attempt": 1,
+                        **first,
+                    },
+                }
+            return
+
+        with jobs_lock:
+            setup_jobs[job_id]["phase"] = "auto_heal"
+
+        heal = {
+            "status": "pip_upgrade_failed",
+            "detail": "upgrade step failed",
+        }
+        try:
+            pip_upgrade = subprocess.run(
+                [sys.executable, "-m", "pip", "install", "--upgrade", "graperoot"],
+                capture_output=True,
+                text=True,
+                timeout=600,
+                check=False,
+            )
+            heal = {
+                "status": "pip_upgrade_complete" if pip_upgrade.returncode == 0 else "pip_upgrade_failed",
+                "returncode": pip_upgrade.returncode,
+                "stdout_tail": "\n".join((pip_upgrade.stdout or "").splitlines()[-20:]),
+                "stderr_tail": "\n".join((pip_upgrade.stderr or "").splitlines()[-20:]),
+            }
+        except Exception as exc:
+            heal = {
+                "status": "pip_upgrade_failed",
+                "error": str(exc),
+            }
+
+        with jobs_lock:
+            setup_jobs[job_id]["phase"] = "scan_attempt_2"
+
+        second = _run_scan_once(root, out_file)
+        if second.get("ok"):
+            with jobs_lock:
+                setup_jobs[job_id]["status"] = "completed"
+                setup_jobs[job_id]["result"] = {
+                    "status": "initialized",
+                    "project_root": str(root),
+                    "dual_graph_dir": str(dg),
+                    "agents_md_updated": injected,
+                    "scan_result": {
+                        "status": "scan_complete_after_auto_heal",
+                        "attempt": 2,
+                        "heal": heal,
+                        **second,
+                    },
+                }
+            return
+
+        with jobs_lock:
+            setup_jobs[job_id]["status"] = "failed"
+            setup_jobs[job_id]["result"] = {
+                "status": "scan_failed",
+                "project_root": str(root),
+                "dual_graph_dir": str(dg),
+                "agents_md_updated": injected,
+                "scan_result": {
+                    "status": "scan_failed",
+                    "attempts": [first, second],
+                    "heal": heal,
+                    "hint": "Scan failed after auto-heal retry. Verify python/pip environment and graperoot installation.",
+                },
+            }
+
     @mcp.tool()
     def graperoot_setup(project_path: str = "") -> dict:
-        """Initialize GrapeRoot for the current project. Creates .dual-graph/ directory, builds the info graph, and injects instructions into AGENTS.md/CLAUDE.md. Run this once per project before using other graph tools."""
+        """Initialize GrapeRoot asynchronously for the current project. Creates .dual-graph/, injects AGENTS.md/CLAUDE.md, and starts a background scan job. Returns a job_id for polling."""
         root = Path(project_path).resolve() if project_path else project_root
         dg = root / ".dual-graph"
         dg.mkdir(parents=True, exist_ok=True)
@@ -204,103 +336,82 @@ def main() -> None:
 
         injected = inject_agents_md(root)
 
-        out_file = dg / "info_graph.json"
-
-        def _run_scan_once() -> dict:
-            try:
-                completed = subprocess.run(
-                    [
-                        sys.executable,
-                        "-m",
-                        "graperoot.graph_builder",
-                        "--root",
-                        str(root),
-                        "--out",
-                        str(out_file),
-                    ],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    check=False,
-                )
-            except Exception as exc:
-                return {
-                    "ok": False,
-                    "method": "python -m graperoot.graph_builder",
-                    "error": str(exc),
-                }
-
-            if completed.returncode == 0 and out_file.exists():
-                return {
-                    "ok": True,
-                    "method": "python -m graperoot.graph_builder",
-                    "returncode": 0,
-                    "info_graph": str(out_file),
-                }
-
-            return {
-                "ok": False,
-                "method": "python -m graperoot.graph_builder",
-                "returncode": completed.returncode,
-                "stdout_tail": "\n".join((completed.stdout or "").splitlines()[-20:]),
-                "stderr_tail": "\n".join((completed.stderr or "").splitlines()[-20:]),
+        job_id = uuid.uuid4().hex
+        with jobs_lock:
+            setup_jobs[job_id] = {
+                "status": "queued",
+                "phase": "queued",
+                "project_root": str(root),
+                "dual_graph_dir": str(dg),
+                "agents_md_updated": injected,
+                "created_at": time.time(),
+                "result": None,
             }
 
-        first = _run_scan_once()
-        if first.get("ok"):
-            scan_result = {
-                "status": "scan_complete",
-                "attempt": 1,
-                **first,
-            }
-        else:
-            heal = {
-                "status": "pip_upgrade_failed",
-                "detail": "upgrade step failed",
-            }
-            try:
-                pip_upgrade = subprocess.run(
-                    [sys.executable, "-m", "pip", "install", "--upgrade", "graperoot"],
-                    capture_output=True,
-                    text=True,
-                    timeout=600,
-                    check=False,
-                )
-                heal = {
-                    "status": "pip_upgrade_complete" if pip_upgrade.returncode == 0 else "pip_upgrade_failed",
-                    "returncode": pip_upgrade.returncode,
-                    "stdout_tail": "\n".join((pip_upgrade.stdout or "").splitlines()[-20:]),
-                    "stderr_tail": "\n".join((pip_upgrade.stderr or "").splitlines()[-20:]),
-                }
-            except Exception as exc:
-                heal = {
-                    "status": "pip_upgrade_failed",
-                    "error": str(exc),
-                }
-
-            second = _run_scan_once()
-            if second.get("ok"):
-                scan_result = {
-                    "status": "scan_complete_after_auto_heal",
-                    "attempt": 2,
-                    "heal": heal,
-                    **second,
-                }
-            else:
-                scan_result = {
-                    "status": "scan_failed",
-                    "attempts": [first, second],
-                    "heal": heal,
-                    "hint": "Scan failed after auto-heal retry. Verify python/pip environment and graperoot installation.",
-                }
+        worker = threading.Thread(
+            target=_run_setup_job,
+            args=(job_id, root, dg, injected),
+            daemon=True,
+        )
+        worker.start()
 
         return {
-            "status": "initialized",
+            "status": "queued",
+            "job_id": job_id,
             "project_root": str(root),
             "dual_graph_dir": str(dg),
             "agents_md_updated": injected,
-            "scan_result": scan_result,
+            "message": "Setup job started. Poll graperoot_setup_status(job_id) or call graperoot_setup_wait(job_id).",
         }
+
+    @mcp.tool()
+    def graperoot_setup_status(job_id: str) -> dict:
+        """Get status for a previously started graperoot_setup job."""
+        with jobs_lock:
+            job = setup_jobs.get(job_id)
+            if not job:
+                return {
+                    "status": "not_found",
+                    "job_id": job_id,
+                    "message": "No setup job found for this job_id.",
+                }
+            return {
+                "job_id": job_id,
+                "status": job["status"],
+                "phase": job.get("phase", "unknown"),
+                "project_root": job.get("project_root"),
+                "dual_graph_dir": job.get("dual_graph_dir"),
+                "result": job.get("result"),
+            }
+
+    @mcp.tool()
+    def graperoot_setup_wait(job_id: str, timeout_seconds: int = 1200, poll_interval_seconds: int = 2) -> dict:
+        """Wait for a setup job to complete (or fail), with polling."""
+        start = time.time()
+        while True:
+            with jobs_lock:
+                job = setup_jobs.get(job_id)
+                if not job:
+                    return {
+                        "status": "not_found",
+                        "job_id": job_id,
+                        "message": "No setup job found for this job_id.",
+                    }
+                if job["status"] in {"completed", "failed"}:
+                    return {
+                        "job_id": job_id,
+                        "status": job["status"],
+                        "phase": job.get("phase", "unknown"),
+                        "result": job.get("result"),
+                    }
+
+            if time.time() - start >= timeout_seconds:
+                return {
+                    "job_id": job_id,
+                    "status": "timeout",
+                    "message": "Wait timed out; call graperoot_setup_status(job_id) to continue polling.",
+                }
+            time.sleep(max(1, poll_interval_seconds))
 
     mcp.run(transport="stdio")
 
