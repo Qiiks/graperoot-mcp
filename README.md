@@ -21,14 +21,8 @@ That's it. You'll see an interactive picker to select which AI assistants to con
 ## Prerequisites
 
 - **Python >=3.10** must be installed
-- **GrapeRoot** should be installed first ([install guide](https://graperoot.dev/)):
-  ```bash
-  # macOS/Linux
-  curl -sSL https://raw.githubusercontent.com/kunal12203/Codex-CLI-Compact/main/install.sh | bash
 
-  # Windows (PowerShell)
-  irm https://raw.githubusercontent.com/kunal12203/Codex-CLI-Compact/main/install.ps1 | iex
-  ```
+That's it. The setup command will offer to install the `graperoot` pip package automatically if it's not found.
 
 ## Supported Platforms
 
@@ -104,12 +98,18 @@ After global config, run `graph_scan` from within your AI assistant to initializ
 
 ## Auto-Updates
 
-GrapeRoot automatically checks for updates every time you run `dgc .` or `dg .`. No separate update command needed.
+Keep graperoot up to date by running:
+
+```bash
+pip install --upgrade graperoot
+```
+
+Or re-run `npx graperoot-mcp setup` which checks and installs the latest version.
 
 ## Development
 
 ```bash
-git clone https://github.com/sanveer-dev/graperoot-mcp.git
+git clone https://github.com/Qiiks/graperoot-mcp.git
 cd graperoot-mcp
 npm install
 npm run build
