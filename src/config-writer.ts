@@ -1,6 +1,8 @@
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { execSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
 import type { PlatformAdapter, MCPServerConfig, SetupResult } from "./types.js";
 
 const SERVER_NAME = "graperoot";
@@ -48,8 +50,31 @@ export function installGraperoot(python: string): boolean {
   }
 }
 
-export function getWrapperPath(): string {
-  return join(dirname(dirname(new URL(import.meta.url).pathname)), "python", "graperoot_mcp_server.py");
+function getPackagedWrapperPath(): string {
+  const currentFile = fileURLToPath(import.meta.url);
+  return resolve(dirname(dirname(currentFile)), "python", "graperoot_mcp_server.py");
+}
+
+function getInstalledWrapperPath(): string {
+  const home = homedir();
+  return join(home, ".graperoot-mcp", "bin", "graperoot_mcp_server.py");
+}
+
+export function installWrapperToUserDir(): string {
+  const source = getPackagedWrapperPath();
+  const target = getInstalledWrapperPath();
+  const targetDir = dirname(target);
+
+  if (!existsSync(source)) {
+    throw new Error(`Packaged wrapper not found at ${source}`);
+  }
+
+  if (!existsSync(targetDir)) {
+    mkdirSync(targetDir, { recursive: true });
+  }
+
+  copyFileSync(source, target);
+  return target;
 }
 
 export function getMCPServerCommand(): string[] {
@@ -62,7 +87,7 @@ export function getMCPServerCommand(): string[] {
     throw new Error("graperoot not installed. Run: pip install graperoot");
   }
 
-  const wrapper = getWrapperPath();
+  const wrapper = installWrapperToUserDir();
   return [python, wrapper];
 }
 
