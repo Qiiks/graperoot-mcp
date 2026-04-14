@@ -6,3 +6,5 @@ Thumbs.db
 __pycache__/
 python/__pycache__/
 *.pyc
+
+.dual-graph
