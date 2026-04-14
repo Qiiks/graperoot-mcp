@@ -17,9 +17,9 @@
     "qoder",
     "antigravity"
   ],
-  "homepage": "https://github.com/sanveer-dev/graperoot-mcp#readme",
+  "homepage": "https://github.com/Qiiks/graperoot-mcp#readme",
   "bugs": {
-    "url": "https://github.com/sanveer-dev/graperoot-mcp/issues"
+    "url": "https://github.com/Qiiks/graperoot-mcp/issues"
   },
   "license": "MIT",
   "author": "Sanveer",
@@ -36,7 +36,8 @@
     "dev": "tsup --watch",
     "lint": "eslint src/",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "publish-if-changed": "npx npmpub"
   },
   "dependencies": {
     "@inquirer/prompts": "^7.0.0",
