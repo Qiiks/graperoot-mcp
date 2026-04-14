@@ -18,6 +18,12 @@ npx graperoot-mcp setup
 
 That's it. You'll see an interactive picker to select which AI assistants to configure.
 
+Once configured, open a new session in your favorite AI assistant and ask:
+
+> "initialize graperoot"
+
+This will trigger the agent to scan your project and build the dual-graph.
+
 ## Prerequisites
 
 - **Python >=3.10** must be installed
